@@ -1,5 +1,5 @@
 /*
- SyphonServerRendererMetal.h
+ SyphonMetalShaders.metal
  Syphon
  
  Copyright 2020-2023 Maxime Touroute & Philippe Chaurand (www.millumin.com),
@@ -27,13 +27,36 @@
  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import <Foundation/Foundation.h>
-#import <Metal/Metal.h>
+#include <metal_stdlib>
+#include <simd/simd.h>
+#include "SyphonServerMetalTypes.h"
 
-@interface SyphonServerRendererMetal : NSObject
+using namespace metal;
 
-- (instancetype) initWithDevice:(id<MTLDevice>)device colorPixelFormat:(MTLPixelFormat)colorPixelFormat;
-- (void)renderFromTexture:(id<MTLTexture>)offScreenTexture inTexture:(id<MTLTexture>)texture region:(NSRect)region onCommandBuffer:(id<MTLCommandBuffer>)commandBuffer flip:(BOOL)flip;
+typedef struct
+{
+    float4 clipSpacePosition [[position]];
+    float2 textureCoordinate;
+} RasterizerData;
 
+vertex RasterizerData textureToScreenVertexShader(uint vertexID [[ vertex_id ]],
+                                                  constant SYPHONTextureVertex *vertexArray [[ buffer(SYPHONVertexInputIndexVertices) ]],
+                                                  constant vector_uint2 *viewportSizePointer  [[ buffer(SYPHONVertexInputIndexViewportSize) ]])
+{
+    RasterizerData out;
+    float2 pixelSpacePosition = vertexArray[vertexID].position.xy;
+    float2 viewportSize = float2(*viewportSizePointer);
+    out.clipSpacePosition.xy = pixelSpacePosition / (viewportSize / 2.0);
+    out.clipSpacePosition.z = 0.0;
+    out.clipSpacePosition.w = 1.0;
+    out.textureCoordinate = vertexArray[vertexID].textureCoordinate;
+    return out;
+}
 
-@end
+fragment float4 textureToScreenSamplingShader(RasterizerData in [[stage_in]],
+                                              texture2d<half> colorTexture [[ texture(SYPHONTextureIndexZero) ]])
+{
+    constexpr sampler textureSampler (mag_filter::nearest, min_filter::nearest);
+    const half4 colorSample = colorTexture.sample(textureSampler, in.textureCoordinate);
+    return float4(colorSample);
+}

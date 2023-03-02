@@ -1,11 +1,36 @@
+/*
+ SyphonMetalServer.m
+ Syphon
+ 
+ Copyright 2020-2023 Maxime Touroute & Philippe Chaurand (www.millumin.com),
+ bangnoise (Tom Butterworth) & vade (Anton Marini). All rights reserved.
+ 
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ 
+ * Redistributions of source code must retain the above copyright
+ notice, this list of conditions and the following disclaimer.
+ 
+ * Redistributions in binary form must reproduce the above copyright
+ notice, this list of conditions and the following disclaimer in the
+ documentation and/or other materials provided with the distribution.
+ 
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #import "SyphonMetalServer.h"
-#import <Metal/MTLCommandQueue.h>
 #import "SyphonServerRendererMetal.h"
 #import "SyphonPrivate.h"
 #import "SyphonSubclassing.h"
-
-
-
 
 @implementation SYPHON_METAL_SERVER_UNIQUE_CLASS_NAME
 {
@@ -14,16 +39,10 @@
     SyphonServerRendererMetal *_renderer;
 }
 
-+ (NSInteger)integerValueForKey:(NSString *)key fromOptions:(NSDictionary *)options
-{
-    NSNumber *number = [options objectForKey:key];
-    if ([number respondsToSelector:@selector(unsignedIntValue)])
-    {
-        return [number unsignedIntValue];
-    }
-    return 0;
-}
-
+// These are redeclared from SyphonServerBase.h
+@dynamic name;
+@dynamic serverDescription;
+@dynamic hasClients;
 
 #pragma mark - Lifecycle
 
@@ -32,52 +51,76 @@
     self = [super initWithName:name options:options];
     if( self )
     {
-        _device = [theDevice retain];
+        _device = theDevice;
         _surfaceTexture = nil;
         _renderer = [[SyphonServerRendererMetal alloc] initWithDevice:theDevice colorPixelFormat:MTLPixelFormatBGRA8Unorm];
+        if (!_renderer)
+        {
+            return nil;
+        }
     }
     return self;
 }
 
-- (void)lazySetupTextureForSize:(NSSize)size
+- (id)init
 {
-    BOOL hasSizeChanged = !NSEqualSizes(CGSizeMake(_surfaceTexture.width, _surfaceTexture.height), size);
-    if (hasSizeChanged)
+    self = [super init];
+    if (self)
     {
-        [_surfaceTexture release];
-        _surfaceTexture = nil;
+        self = nil;
     }
-    if(_surfaceTexture == nil)
-    {
-        MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                                                              width:size.width
-                                                                                             height:size.height
-                                                                                          mipmapped:NO];
-        descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-        IOSurfaceRef surface = [self copySurfaceForWidth:size.width height:size.height options:nil];
-        if (surface)
-        {
-            _surfaceTexture = [_device newTextureWithDescriptor:descriptor iosurface:surface plane:0];
-            _surfaceTexture.label = @"Syphon Surface Texture";
-            CFRelease(surface);
-        }
-    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [self destroyResources];
+}
+
+- (id<MTLDevice>)device
+{
+    return _device;
 }
 
 - (id<MTLTexture>)prepareToDrawFrameOfSize:(NSSize)size
 {
-    [self lazySetupTextureForSize:size];
-    return _surfaceTexture;
+    @synchronized (self) {
+        BOOL hasSizeChanged = !NSEqualSizes(CGSizeMake(_surfaceTexture.width, _surfaceTexture.height), size);
+        if (hasSizeChanged)
+        {
+            _surfaceTexture = nil;
+        }
+        if(_surfaceTexture == nil)
+        {
+            MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                                  width:size.width
+                                                                                                 height:size.height
+                                                                                              mipmapped:NO];
+            descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+            IOSurfaceRef surface = [self copySurfaceForWidth:size.width height:size.height options:nil];
+            if (surface)
+            {
+                _surfaceTexture = [_device newTextureWithDescriptor:descriptor iosurface:surface plane:0];
+                _surfaceTexture.label = @"Syphon Surface Texture";
+                CFRelease(surface);
+            }
+        }
+        return _surfaceTexture;
+    }
+}
+
+- (void)destroyResources
+{
+    @synchronized (self) {
+        _surfaceTexture = nil;
+    }
+    _device = nil;
+    _renderer = nil;
 }
 
 - (void)stop
 {
-    [_surfaceTexture release];
-    _surfaceTexture = nil;
-    [_device release];
-    _device = nil;
-    [_renderer release];
-    _renderer = nil;
+    [self destroyResources];
     [super stop];
 }
 
@@ -86,7 +129,9 @@
 
 - (id<MTLTexture>)newFrameImage
 {
-    return [_surfaceTexture retain];
+    @synchronized (self) {
+        return _surfaceTexture;
+    }
 }
 
 - (void)publishFrameTexture:(id<MTLTexture>)textureToPublish onCommandBuffer:(id<MTLCommandBuffer>)commandBuffer imageRegion:(NSRect)region flipped:(BOOL)isFlipped
@@ -95,11 +140,14 @@
         SYPHONLOG(@"TextureToPublish is nil. Syphon will not publish");
         return;
     }
-    [self lazySetupTextureForSize:region.size];
+    
+    region = NSIntersectionRect(region, NSMakeRect(0, 0, textureToPublish.width, textureToPublish.height));
+    
+    id<MTLTexture> destination = [self prepareToDrawFrameOfSize:region.size];
     
     // When possible, use faster blit
-    if( !isFlipped && textureToPublish.pixelFormat == _surfaceTexture.pixelFormat
-       && textureToPublish.sampleCount == _surfaceTexture.sampleCount
+    if( !isFlipped && textureToPublish.pixelFormat == destination.pixelFormat
+       && textureToPublish.sampleCount == destination.sampleCount
        && !textureToPublish.framebufferOnly)
     {
         id<MTLBlitCommandEncoder> blitCommandEncoder = [commandBuffer blitCommandEncoder];
@@ -109,7 +157,7 @@
                                 sourceLevel:0
                                sourceOrigin:MTLOriginMake(region.origin.x, region.origin.y, 0)
                                  sourceSize:MTLSizeMake(region.size.width, region.size.height, 1)
-                                  toTexture:_surfaceTexture
+                                  toTexture:destination
                            destinationSlice:0
                            destinationLevel:0
                           destinationOrigin:MTLOriginMake(0, 0, 0)];
@@ -119,7 +167,7 @@
     // otherwise, re-draw the frame
     else
     {
-        [_renderer renderFromTexture:textureToPublish inTexture:_surfaceTexture region:region onCommandBuffer:commandBuffer flip:isFlipped];
+        [_renderer renderFromTexture:textureToPublish inTexture:destination region:region onCommandBuffer:commandBuffer flip:isFlipped];
     }
     
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull commandBuffer) {

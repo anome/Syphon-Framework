@@ -1,5 +1,5 @@
 //
-//  SyphonIOSurfaceServer.m
+//  SyphonServerBase.m
 //  Syphon
 //
 //  Created by Tom Butterworth on 26/04/2019.
@@ -8,6 +8,7 @@
 #import "SyphonServerBase.h"
 #import "SyphonServerConnectionManager.h"
 #import "SyphonPrivate.h"
+#import <os/lock.h>
 
 @interface SyphonServerBase (Private)
 + (void)retireRemainingServers;
@@ -23,7 +24,7 @@ static void finalizer()
 {
     // Once our minimum version reaches 10.12, replace
     // this with os_unfair_lock
-    OSSpinLock _mdLock;
+    os_unfair_lock _mdLock;
 
     NSString *_name;
     NSString *_uuid;
@@ -90,7 +91,7 @@ static void finalizer()
             _broadcasts = YES;
         }
 
-        _mdLock = OS_SPINLOCK_INIT;
+        _mdLock = OS_UNFAIR_LOCK_INIT;
 
         _connectionManager = [[SyphonServerConnectionManager alloc] initWithUUID:_uuid options:options];
 
@@ -98,7 +99,6 @@ static void finalizer()
 
         if (![_connectionManager start])
         {
-            [self release];
             return nil;
         }
 
@@ -113,7 +113,7 @@ static void finalizer()
         if ([processInfo respondsToSelector:@selector(beginActivityWithOptions:reason:)])
         {
             NSActivityOptions options = NSActivityAutomaticTerminationDisabled | NSActivityBackground;
-            _activityToken = [[processInfo beginActivityWithOptions:options reason:_uuid] retain];
+            _activityToken = [processInfo beginActivityWithOptions:options reason:_uuid];
         }
     }
     return self;
@@ -124,17 +124,14 @@ static void finalizer()
     SYPHONLOG(@"Server deallocing, name: %@, UUID: %@", self.name, [self.serverDescription objectForKey:SyphonServerDescriptionUUIDKey]);
     // Don't call anything in the subclass, it has already been dealloc'd
     [self destroyBaseResources];
-    [_name release];
-    [_uuid release];
-    [super dealloc];
 }
 
 - (NSString*)name
 {
-    OSSpinLockLock(&_mdLock);
-    NSString *result = [_name retain];
-    OSSpinLockUnlock(&_mdLock);
-    return [result autorelease];
+    os_unfair_lock_lock(&_mdLock);
+    NSString *result = _name;
+    os_unfair_lock_unlock(&_mdLock);
+    return result;
 }
 
 - (void)setName:(NSString *)newName
@@ -144,11 +141,9 @@ static void finalizer()
         newName = @"";
     }
     [newName copy];
-    [newName retain];
-    OSSpinLockLock(&_mdLock);
-    [_name release];
+    os_unfair_lock_lock(&_mdLock);
     _name = newName;
-    OSSpinLockUnlock(&_mdLock);
+    os_unfair_lock_unlock(&_mdLock);
     [(SyphonServerConnectionManager *)_connectionManager setName:newName];
     if (_broadcasts)
     {
@@ -196,7 +191,6 @@ static void finalizer()
     {
         [(SyphonServerConnectionManager *)_connectionManager removeObserver:self forKeyPath:@"hasClients"];
         [(SyphonServerConnectionManager *)_connectionManager stop];
-        [(SyphonServerConnectionManager *)_connectionManager release];
         _connectionManager = nil;
     }
     if (_broadcasts)
@@ -207,7 +201,6 @@ static void finalizer()
     if (_activityToken)
     {
         [[NSProcessInfo processInfo] endActivity:_activityToken];
-        [_activityToken release];
         _activityToken = nil;
     }
     if (_surface != NULL)
@@ -304,30 +297,29 @@ static void finalizer()
  We track all instances and send a retirement broadcast for any which haven't been stopped when the code is unloaded.
  */
 
-static OSSpinLock mRetireListLock = OS_SPINLOCK_INIT;
+static os_unfair_lock mRetireListLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableSet *mRetireList = nil;
 
 + (void)addServerToRetireList:(NSString *)serverUUID
 {
-    OSSpinLockLock(&mRetireListLock);
+    os_unfair_lock_lock(&mRetireListLock);
     if (mRetireList == nil)
     {
         mRetireList = [[NSMutableSet alloc] initWithCapacity:1U];
     }
     [mRetireList addObject:serverUUID];
-    OSSpinLockUnlock(&mRetireListLock);
+    os_unfair_lock_unlock(&mRetireListLock);
 }
 
 + (void)removeServerFromRetireList:(NSString *)serverUUID
 {
-    OSSpinLockLock(&mRetireListLock);
+    os_unfair_lock_lock(&mRetireListLock);
     [mRetireList removeObject:serverUUID];
     if ([mRetireList count] == 0)
     {
-        [mRetireList release];
         mRetireList = nil;
     }
-    OSSpinLockUnlock(&mRetireListLock);
+    os_unfair_lock_unlock(&mRetireListLock);
 }
 
 + (void)retireRemainingServers
@@ -335,10 +327,10 @@ static NSMutableSet *mRetireList = nil;
     // take the set out of the global so we don't hold the spin-lock while we send the notifications
     // even though there should never be contention for this
     NSMutableSet *mySet = nil;
-    OSSpinLockLock(&mRetireListLock);
+    os_unfair_lock_lock(&mRetireListLock);
     mySet = mRetireList;
     mRetireList = nil;
-    OSSpinLockUnlock(&mRetireListLock);
+    os_unfair_lock_unlock(&mRetireListLock);
     for (NSString *uuid in mySet) {
         SYPHONLOG(@"Retiring a server at code unload time because it was not properly stopped");
         NSDictionary *fakeServerDescription = [NSDictionary dictionaryWithObject:uuid forKey:SyphonServerDescriptionUUIDKey];
@@ -347,7 +339,6 @@ static NSMutableSet *mRetireList = nil;
                                                                      userInfo:fakeServerDescription
                                                            deliverImmediately:YES];
     }
-    [mySet release];
 }
 
 - (void)startBroadcasts

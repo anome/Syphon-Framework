@@ -1,86 +1,39 @@
+/*
+ SyphonServerRendererMetal.m
+ Syphon
+ 
+ Copyright 2020-2023 Maxime Touroute & Philippe Chaurand (www.millumin.com),
+ bangnoise (Tom Butterworth) & vade (Anton Marini). All rights reserved.
+ 
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ 
+ * Redistributions of source code must retain the above copyright
+ notice, this list of conditions and the following disclaimer.
+ 
+ * Redistributions in binary form must reproduce the above copyright
+ notice, this list of conditions and the following disclaimer in the
+ documentation and/or other materials provided with the distribution.
+ 
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #import "SyphonServerRendererMetal.h"
-#import <Metal/Metal.h>
 #include <simd/simd.h>
-
-typedef enum SYPHONVertexInputIndex
-{
-    SYPHONVertexInputIndexVertices     = 0,
-    SYPHONVertexInputIndexViewportSize =  1,
-} SYPHONVertexInputIndex;
-
-
-typedef enum SYPHONTextureIndex
-{
-    SYPHONTextureIndexZero = 0,
-} SYPHONTextureIndex;
-
-typedef struct
-{
-    vector_float2 position;
-    vector_float4 color;
-} SYPHONColorVertex;
-
-typedef struct
-{
-    vector_float2 position;
-    vector_float2 textureCoordinate;
-} SYPHONTextureVertex;
-
-NSString *types = @""
-"#include <simd/simd.h>\n"
-"typedef enum SyphonVertexInputIndex\n"
-"{"
-"    SYPHONVertexInputIndexVertices     = 0,\n"
-"    SYPHONVertexInputIndexViewportSize =  1,\n"
-"} SYPHONVertexInputIndex;\n"
-"typedef enum SyphonTextureIndex\n"
-"{"
-"    SYPHONTextureIndexZero = 0,\n"
-"} SYPHONTextureIndex;\n"
-"typedef struct\n"
-"{"
-"    vector_float2 position;\n"
-"    vector_float4 color;\n"
-"} SYPHONColorVertex;\n"
-"typedef struct\n"
-"{"
-"    vector_float2 position;\n"
-"    vector_float2 textureCoordinate;\n"
-"} SYPHONTextureVertex;\n";
-
-NSString *shaderCode = @""
-"#include <metal_stdlib>\n"
-"#include <simd/simd.h>\n"
-"using namespace metal;\n"
-"typedef struct\n"
-"{"
-"    float4 clipSpacePosition [[position]];\n"
-"    float4 color;\n"
-"    float2 textureCoordinate;\n"
-"} RasterizerData;\n"
-"vertex RasterizerData textureToScreenVertexShader(uint vertexID [[ vertex_id ]], constant SYPHONTextureVertex *vertexArray [[ buffer(SYPHONVertexInputIndexVertices) ]], constant vector_uint2 *viewportSizePointer  [[ buffer(SYPHONVertexInputIndexViewportSize) ]]){"
-"RasterizerData out;"
-"float2 pixelSpacePosition = vertexArray[vertexID].position.xy;"
-"float2 viewportSize = float2(*viewportSizePointer);"
-"out.clipSpacePosition.xy = pixelSpacePosition / (viewportSize / 2.0);"
-"out.clipSpacePosition.z = 0.0;"
-"out.clipSpacePosition.w = 1.0;"
-"out.textureCoordinate = vertexArray[vertexID].textureCoordinate;"
-"return out;"
-"}\n"
-
-"fragment float4 textureToScreenSamplingShader(RasterizerData in [[stage_in]], texture2d<half> colorTexture [[ texture(SYPHONTextureIndexZero) ]]) {"
-"    constexpr sampler textureSampler (mag_filter::nearest, min_filter::nearest);"
-"    const half4 colorSample = colorTexture.sample(textureSampler, in.textureCoordinate);"
-"    return float4(colorSample);"
-"}";
+#include "SyphonServerMetalTypes.h"
 
 @implementation SyphonServerRendererMetal
 {
     id<MTLRenderPipelineState> _pipelineState;
-    MTLPixelFormat _colorPixelFormat;
-    vector_uint2 _viewportSize;
-    id<MTLDevice> _device;
 }
 
 - (nonnull instancetype)initWithDevice:(id<MTLDevice>)device colorPixelFormat:(MTLPixelFormat)colorPixelFormat
@@ -88,22 +41,18 @@ NSString *shaderCode = @""
     self = [super init];
     if( self )
     {
-        _colorPixelFormat = colorPixelFormat;
-        _device = device;
-
         NSError *error = NULL;
-        NSString *code = [types stringByAppendingString:shaderCode];
-        MTLCompileOptions *compileOptions = [MTLCompileOptions new];
-        compileOptions.languageVersion = MTLLanguageVersion1_2;
-        id<MTLLibrary> defaultLibrary = [device newLibraryWithSource:code options:compileOptions error:&error];
-        if( error )
+        NSBundle *bundle = [NSBundle bundleForClass:[self class]];
+        id<MTLLibrary> defaultLibrary = [device newDefaultLibraryWithBundle:bundle error:&error];
+        if(error)
         {
-            SYPHONLOG(@"METAL SHADER COMPILER ERROR:%@", error);
+            SYPHONLOG(@"Metal library could not be loaded:%@", error);
         }
         
         // Load the vertex/shader function from the library
         id <MTLFunction> vertexFunction = [defaultLibrary newFunctionWithName:@"textureToScreenVertexShader"];
         id <MTLFunction> fragmentFunction = [defaultLibrary newFunctionWithName:@"textureToScreenSamplingShader"];
+        
         
         // Set up a descriptor for creating a pipeline state object
         MTLRenderPipelineDescriptor *pipelineStateDescriptor = [MTLRenderPipelineDescriptor new];
@@ -114,6 +63,7 @@ NSString *shaderCode = @""
         
         _pipelineState = [device newRenderPipelineStateWithDescriptor:pipelineStateDescriptor error:&error];
         
+        
         if( !_pipelineState )
         {
             SYPHONLOG(@"Failed to createe pipeline state, error %@", error);
@@ -123,6 +73,7 @@ NSString *shaderCode = @""
     return self;
 }
 
+
 - (void)renderFromTexture:(id<MTLTexture>)offScreenTexture inTexture:(id<MTLTexture>)texture region:(NSRect)region onCommandBuffer:(id<MTLCommandBuffer>)commandBuffer flip:(BOOL)flip
 {
     if( texture == nil )
@@ -131,8 +82,7 @@ NSString *shaderCode = @""
     }
     
     const MTLViewport viewport = (MTLViewport){region.origin.x, region.origin.y, region.size.width, region.size.height, -1.0, 1.0 };
-    _viewportSize.x = viewport.width;
-    _viewportSize.y = viewport.height;
+    vector_uint2 viewportSize = simd_make_uint2(viewport.width, viewport.height);
     
     const float w = viewport.width/2;
     const float h = viewport.height/2;
@@ -163,7 +113,7 @@ NSString *shaderCode = @""
     [renderEncoder setViewport:viewport];
     [renderEncoder setRenderPipelineState:_pipelineState];
     [renderEncoder setVertexBytes:quadVertices length:sizeof(quadVertices) atIndex:SYPHONVertexInputIndexVertices];
-    [renderEncoder setVertexBytes:&_viewportSize length:sizeof(_viewportSize) atIndex:SYPHONVertexInputIndexViewportSize];
+    [renderEncoder setVertexBytes:&viewportSize length:sizeof(viewportSize) atIndex:SYPHONVertexInputIndexViewportSize];
     [renderEncoder setFragmentTexture:offScreenTexture atIndex:SYPHONTextureIndexZero];
     [renderEncoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:numberOfVertices];
     [renderEncoder endEncoding];

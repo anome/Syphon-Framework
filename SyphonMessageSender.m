@@ -32,6 +32,10 @@
 #import "SyphonCFMessageSender.h"
 //#import "SyphonMachMessageSender.h"
 
+@interface SyphonMessageSender ()
+@property (readwrite, atomic) BOOL isValid;
+@end
+
 @implementation SyphonMessageSender
 {
 @private
@@ -46,17 +50,10 @@
 	{
 		if ([self class] == [SyphonMessageSender class])
 		{
-            [self release];
             if ([protocolName isEqualToString:SyphonMessagingProtocolCFMessage])
 			{
                 return [[SyphonCFMessageSender alloc] initForName:name protocol:protocolName invalidationHandler:handler];
             }
-			/*
-			else if ([protocolName isEqualToString:SyphonMessagingProtocolMachMessage])
-			{
-                return [[SyphonMessageSenderMachMessage alloc] initForName:name protocol:protocolName invalidationHandler:handler];
-            }
-			 */
 			else
 			{
 			    return nil;
@@ -72,21 +69,10 @@
 	return self;
 }
 
-- (void)dealloc
-{
-	[_name release];
-	[_handler release];
-	[super dealloc];
-}
 
 - (NSString *)name
 {
 	return _name;
-}
-
-- (BOOL)isValid
-{
-	return NO;
 }
 
 - (void)send:(id <NSCoding>)payload ofType:(uint32_t)type
@@ -96,6 +82,7 @@
 
 - (void)invalidate
 {
+    self.isValid = NO;
 	if (_handler != nil)
 	{
 		_handler();

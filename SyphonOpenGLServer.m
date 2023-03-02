@@ -30,8 +30,8 @@
 
 #import "SyphonOpenGLServer.h"
 #import "SyphonOpenGLImage.h"
-#import "SyphonServerRendererLegacy.h"
-#import "SyphonServerRendererCore.h"
+#import "SyphonServerRendererLegacyGL.h"
+#import "SyphonServerRendererCoreGL.h"
 #import "SyphonPrivate.h"
 #import "SyphonCGL.h"
 #import "SyphonSubclassing.h"
@@ -46,7 +46,7 @@
 @implementation SyphonOpenGLServer
 {
 @private
-    SyphonServerRenderer * _renderer;
+    SyphonServerRendererGL * _renderer;
     CGLContextObj _shareContext;
 
     BOOL _pushPending;
@@ -58,7 +58,7 @@
 }
 
 // TODO: delete if we move these out of SyphonServer.h
-// (they are redeclared from SyphonIOSurfaceServer.h)
+// (they are redeclared from SyphonServerBase.h)
 @dynamic name;
 @dynamic serverDescription;
 @dynamic hasClients;
@@ -78,7 +78,6 @@
     self = [super init];
     if (self)
     {
-        [self release];
         self = nil;
     }
     return self;
@@ -91,7 +90,6 @@
 	{
 		if (context == NULL)
 		{
-			[self release];
 			return nil;
 		}
 		
@@ -115,7 +113,7 @@
 #endif
         if (SyphonOpenGLContextIsLegacy(context))
         {
-            _renderer = [[SyphonServerRendererLegacy alloc] initWithContext:context
+            _renderer = [[SyphonServerRendererLegacyGL alloc] initWithContext:context
                                                             MSAASampleCount:MSAASampleCount
                                                       depthBufferResolution:depthBufferResolution
                                                     stencilBufferResolution:stencilBufferResolution];
@@ -125,7 +123,7 @@
 #ifdef SYPHON_CORE_SHARE
             context = SyphonOpenGLCreateSharedContext(context);
 #endif
-            _renderer = [[SyphonServerRendererCore alloc] initWithContext:context
+            _renderer = [[SyphonServerRendererCoreGL alloc] initWithContext:context
                                                           MSAASampleCount:MSAASampleCount
                                                     depthBufferResolution:depthBufferResolution
                                                   stencilBufferResolution:stencilBufferResolution];
@@ -146,8 +144,6 @@
         CGLReleaseContext(_shareContext);
     }
 #endif
-    [_renderer release];
-	[super dealloc];
 }
 
 - (CGLContextObj)context
@@ -235,7 +231,7 @@
 
 - (SYPHON_OPENGL_IMAGE_UNIQUE_CLASS_NAME *)newFrameImage
 {
-	return [_surfaceTexture retain];
+	return _surfaceTexture;
 }
 
 #pragma mark -
@@ -294,7 +290,6 @@
 #if !SYPHON_DEBUG_NO_DRAWING
     [self destroySurface];
     [_renderer destroySizedResources];
-	[_surfaceTexture release];
 	_surfaceTexture = nil;
 #endif // SYPHON_DEBUG_NO_DRAWING
 }

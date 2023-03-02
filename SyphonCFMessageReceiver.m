@@ -44,11 +44,12 @@ static CFDataRef MessageReturnCallback (
 	id <NSCoding> decoded;
 	if (data && CFDataGetLength(data))
 	{
-		decoded = [NSKeyedUnarchiver unarchiveObjectWithData:(NSData *)data];
+        NSSet<Class> *classes = ((__bridge SyphonMessageReceiver *)info).allowedClasses;
+        decoded = [NSKeyedUnarchiver unarchivedObjectOfClasses:classes fromData:(__bridge  NSData *)data error:nil];
 	} else {
 		decoded = nil;
 	}
-	[(SyphonMessageReceiver *)info receiveMessageWithPayload:decoded ofType:msgid];
+	[(__bridge SyphonMessageReceiver *)info receiveMessageWithPayload:decoded ofType:msgid];
 	return NULL;
 }
 
@@ -77,25 +78,23 @@ static CFDataRef MessageReturnCallback (
         theCount--;
         if (theCount == 0)
         {
-            dispatch_release(theQueue);
             theQueue = NULL;
         }
     }
 }
 
-- (id)initForName:(NSString *)name protocol:(NSString *)protocolName handler:(void (^)(id data, uint32_t type))handler
+- (id)initForName:(NSString *)name protocol:(NSString *)protocolName allowedClasses:(NSSet<Class> *)classes handler:(void (^)(id data, uint32_t type))handler
 {
-    self = [super initForName:name protocol:protocolName handler:handler];
+    self = [super initForName:name protocol:protocolName allowedClasses:classes handler:handler];
 	if (self)
 	{
 		if ([protocolName isEqualToString:SyphonMessagingProtocolCFMessage])
 		{
-			CFMessagePortContext context = (CFMessagePortContext){0,self,NULL,NULL,NULL};
+			CFMessagePortContext context = (CFMessagePortContext){0,(__bridge void *)(self),NULL,NULL,NULL};
 			_port = CFMessagePortCreateLocal(kCFAllocatorDefault, (CFStringRef)name, MessageReturnCallback, &context, NULL);
 		}
 		if (_port == NULL)
 		{
-			[self release];
 			return nil;
 		}
         CFMessagePortSetDispatchQueue(_port, [[self class] addUser]);
@@ -106,7 +105,6 @@ static CFDataRef MessageReturnCallback (
 - (void)dealloc
 {
 	if (_port) CFRelease(_port);
-	[super dealloc];
 }
 
 - (void)invalidate

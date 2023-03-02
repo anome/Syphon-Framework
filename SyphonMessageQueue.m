@@ -29,6 +29,7 @@
 
 #import "SyphonMessageQueue.h"
 #import <libkern/OSAtomic.h>
+#import <os/lock.h>
 
 /*
  
@@ -49,12 +50,13 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 	SyphonQMember *n = OSAtomicDequeue(pool, offsetof(SyphonQMember, next));
 	if (!n)
 	{
-		n = malloc(sizeof(SyphonQMember));
+		n = calloc(1, sizeof(SyphonQMember));
 	}
 	if (n)
 	{
 		n->next = NULL;
-		n->content = [mcontent retain];
+        assert(n->content == nil);
+		n->content = mcontent;
 		n->type = mtype;
 	}
 	return n;
@@ -67,7 +69,7 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 @implementation SyphonMessageQueue
 {
 @private
-    OSSpinLock _lock;
+    os_unfair_lock _lock;
     void *_head;
     OSQueueHead _pool; // TODO: or maybe manage our own within the lock as we lock anyway
     void *_info;
@@ -81,7 +83,7 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 		// These are the values of OS_ATOMIC_QUEUE_INIT
 		_pool.opaque1 = NULL;
 		_pool.opaque2 = 0;
-		_lock = OS_SPINLOCK_INIT;
+		_lock = OS_UNFAIR_LOCK_INIT;
 	}
 	return self;
 }
@@ -94,7 +96,7 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 	{
 		n = m;
 		m = m->next;
-		[n->content release];
+        n->content = nil;
 		SyphonQMemberDestroy(n);
 	}
 	do {
@@ -106,13 +108,12 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 - (void)dealloc
 {
 	[self drainQueueAndPool];
-	[super dealloc];
 }
 
 - (void)queue:(NSData *)content ofType:(uint32_t)type
 {
 	SyphonQMember *incoming = SyphonQMemberCreateFromPool(&_pool, content, type);
-	OSSpinLockLock(&_lock);
+	os_unfair_lock_lock(&_lock);
 	// We do duplicate message removal and then new message insertion in two passes.
 	// Feel free to improve on that...
 	SyphonQMember *current = (SyphonQMember *)_head;
@@ -122,7 +123,6 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 	{
 		if (current->type == type)
 		{
-			[current->content release];
 			*prev = current->next;
 			delete = current;
 		}
@@ -133,6 +133,7 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 		current = current->next;
 		if (delete)
 		{
+            delete->content = nil;
 			SyphonQMemberReturnToPool(&_pool, delete);
 			delete = NULL;
 		}
@@ -150,14 +151,14 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 		}
 		current->next = incoming;
 	}
-	OSSpinLockUnlock(&_lock);
+	os_unfair_lock_unlock(&_lock);
 }
 
 - (BOOL)copyAndDequeue:(NSData **)content type:(uint32_t *)type
 {
 	BOOL result;
 	SyphonQMember *toDelete;
-	OSSpinLockLock(&_lock);
+	os_unfair_lock_lock(&_lock);
 	if (_head)
 	{
 		result = YES;
@@ -174,8 +175,12 @@ static SyphonQMember *SyphonQMemberCreateFromPool(OSQueueHead *pool, NSData *mco
 		*type = 0;
 		toDelete = NULL;
 	}
-	OSSpinLockUnlock(&_lock);
-	if (toDelete) SyphonQMemberReturnToPool(&_pool, toDelete);
+    os_unfair_lock_unlock(&_lock);
+	if (toDelete)
+    {
+        toDelete->content = nil;
+        SyphonQMemberReturnToPool(&_pool, toDelete);
+    }
 	return result;
 }
 
