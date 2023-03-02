@@ -243,7 +243,6 @@
 				0867D69AFE84028FC02AAC07 /* External Frameworks and Libraries */,
 				034768DFFF38A50411DB9C8B /* Products */,
 				84E4D2282385927B00E24F2D /* Frameworks */,
-				565D06A425CAA2D20048C4DD /* Recovered References */,
 			);
 			name = OpenVideoTap;
 			sourceTree = "<group>";
@@ -367,13 +366,6 @@
 				32DBCF5E0370ADEE00C91783 /* Syphon_Prefix.pch */,
 			);
 			name = "Other Sources";
-			sourceTree = "<group>";
-		};
-		565D06A425CAA2D20048C4DD /* Recovered References */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		84E4D2282385927B00E24F2D /* Frameworks */ = {
