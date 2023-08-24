@@ -30,12 +30,14 @@
 #import "SyphonMetalClient.h"
 #import "SyphonSubclassing.h"
 #import <os/lock.h>
+#import <stdatomic.h>
 
-@implementation SYPHON_METAL_CLIENT_UNIQUE_CLASS_NAME
+@implementation SyphonMetalClient
 {
-    os_unfair_lock _threadLock;
-    id<MTLTexture> _frame;
-    id<MTLDevice> _device;
+    os_unfair_lock  _threadLock;
+    id<MTLTexture>  _frame;
+    id<MTLDevice>   _device;
+    atomic_bool     _frameValid;
 }
 
 @dynamic isValid, serverDescription, hasNewFrame;
@@ -43,7 +45,7 @@
 - (id)initWithServerDescription:(NSDictionary *)description
                          device:(id<MTLDevice>)theDevice
                         options:(NSDictionary *)options
-                   newFrameHandler:(void (^)(SYPHON_METAL_CLIENT_UNIQUE_CLASS_NAME *client))handler
+                   newFrameHandler:(void (^)(SyphonMetalClient *client))handler
 {
     self = [super initWithServerDescription:description options:options newFrameHandler:handler];
     if( self )
@@ -51,6 +53,7 @@
         _device = theDevice;
         _threadLock = OS_UNFAIR_LOCK_INIT;
         _frame = nil;
+        atomic_store(&_frameValid, false);
     }
     return self;
 }
@@ -63,6 +66,7 @@
 - (void)stop
 {
     os_unfair_lock_lock(&_threadLock);
+    atomic_store(&_frameValid, false);
     _frame = nil;
     _device = nil;
     os_unfair_lock_unlock(&_threadLock);
@@ -71,18 +75,23 @@
 
 - (void)invalidateFrame
 {
-    os_unfair_lock_lock(&_threadLock);
-    _frame = nil;
-    os_unfair_lock_unlock(&_threadLock);
+    /*
+     DO NOT take the lock here, it may already be locked and waiting for the SyphonClientConnectionManager lock
+     */
+    atomic_store(&_frameValid, false);
 }
 
 - (id<MTLTexture>)newFrameImage
 {
+    [self updateFrameID];
+
     id<MTLTexture> image = nil;
 
     os_unfair_lock_lock(&_threadLock);
-    if (_frame == nil)
+    if (atomic_load(&_frameValid) == false)
     {
+        _frame = nil;
+
         IOSurfaceRef surface = [self newSurface];
         if (surface != nil)
         {
@@ -91,6 +100,8 @@
 
             CFRelease(surface);
         }
+        
+        atomic_store(&_frameValid, true);
     }
 
     image = _frame;

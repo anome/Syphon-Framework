@@ -10,7 +10,7 @@
 
 
 
-@implementation SYPHON_IOSURFACE_SERVER_UNIQUE_CLASS_NAME
+@implementation SyphonIOSurfaceServer
 
 #pragma mark - Public API
 
