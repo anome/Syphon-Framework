@@ -46,7 +46,7 @@
 
 #pragma mark - Lifecycle
 
-- (id)initWithName:(NSString *)name device:(id<MTLDevice>)theDevice options:(NSDictionary *)options
+- (id)initWithName:(NSString *)name device:(id<MTLDevice>)theDevice options:(NSDictionary<NSString *, id> *)options
 {
     self = [super initWithName:name options:options];
     if( self )
@@ -97,7 +97,7 @@
                                                                                                  height:size.height
                                                                                               mipmapped:NO];
             descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-            IOSurfaceRef surface = [self copySurfaceForWidth:size.width height:size.height options:nil];
+            IOSurfaceRef surface = [self newSurfaceForWidth:size.width height:size.height options:nil];
             if (surface)
             {
                 _surfaceTexture = [_device newTextureWithDescriptor:descriptor iosurface:surface plane:0];

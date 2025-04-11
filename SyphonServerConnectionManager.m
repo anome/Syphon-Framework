@@ -42,8 +42,8 @@
 @implementation SyphonServerConnectionManager {
 @private
     SyphonMessageReceiver *_connection;
-    NSMutableDictionary *_infoClients;
-    NSMutableDictionary *_frameClients;
+    NSMutableDictionary<NSString *, SyphonMessageSender *> *_infoClients;
+    NSMutableDictionary<NSString *, SyphonMessageSender *> *_frameClients;
     BOOL _alive;
     NSString *_uuid;
     IOSurfaceID _surfaceID;
@@ -82,7 +82,7 @@
 	return [self initWithUUID:nil options:nil];
 }
 
-- (id)initWithUUID:(NSString *)uuid options:(NSDictionary *)options
+- (id)initWithUUID:(NSString *)uuid options:(NSDictionary<NSString *, id> *)options
 {
     self = [super init];
     if (self)
@@ -109,13 +109,13 @@
 {	
 	// Tell connected clients
 	dispatch_async(_queue, ^{
-        [self->_infoClients enumerateKeysAndObjectsUsingBlock:^(id key, id client, BOOL *stop) {
-			[(SyphonMessageSender *)client send:serverName ofType:SyphonMessageTypeUpdateServerName];
+        [self->_infoClients enumerateKeysAndObjectsUsingBlock:^(NSString *key, SyphonMessageSender *client, BOOL *stop) {
+			[client send:serverName ofType:SyphonMessageTypeUpdateServerName];
 		}];
 	});
 }
 
-- (NSDictionary *)surfaceDescription
+- (NSDictionary<NSString *, id<NSCoding>> *)surfaceDescription
 {
 	return [NSDictionary dictionaryWithObject:SyphonSurfaceTypeIOSurface forKey:SyphonSurfaceType];
 }
@@ -285,8 +285,8 @@
 			{
 				[self willChangeValueForKey:@"hasClients"];
 			}
-			[_infoClients enumerateKeysAndObjectsUsingBlock:^(id key, id client, BOOL *stop) {
-					[(SyphonMessageSender *)client send:nil ofType:SyphonMessageTypeRetireServer];
+			[_infoClients enumerateKeysAndObjectsUsingBlock:^(NSString *key, SyphonMessageSender *client, BOOL *stop) {
+					[client send:nil ofType:SyphonMessageTypeRetireServer];
 				}];
 			
 			[_infoClients removeAllObjects];
@@ -315,8 +315,8 @@
 - (void)publishNewFrame
 {
 	dispatch_sync(_queue, ^{
-		[_frameClients enumerateKeysAndObjectsUsingBlock:^(id key, id client, BOOL *stop) {
-			[(SyphonMessageSender *)client send:nil ofType:SyphonMessageTypeNewFrame];
+		[_frameClients enumerateKeysAndObjectsUsingBlock:^(NSString *key, SyphonMessageSender *client, BOOL *stop) {
+			[client send:nil ofType:SyphonMessageTypeNewFrame];
 		}];
 	});
 }
@@ -327,8 +327,8 @@
         if( _surfaceID != newID )
         {
             _surfaceID = newID;
-            [_infoClients enumerateKeysAndObjectsUsingBlock:^(id key, id client, BOOL *stop) {
-                [(SyphonMessageSender *)client send:[NSNumber numberWithUnsignedInt:newID] ofType:SyphonMessageTypeUpdateSurfaceID];
+            [_infoClients enumerateKeysAndObjectsUsingBlock:^(NSString * key, SyphonMessageSender * client, BOOL *stop) {
+                [client send:[NSNumber numberWithUnsignedInt:newID] ofType:SyphonMessageTypeUpdateSurfaceID];
             }];
         }
 	});
@@ -339,24 +339,24 @@
 - (void)handleDeadConnection
 {
 	dispatch_async(_queue, ^{
-		NSMutableArray *inMemorium = [NSMutableArray arrayWithCapacity:1];
-        [self->_infoClients enumerateKeysAndObjectsUsingBlock:^(id key, id client, BOOL *stop) {
-			if (![client isValid])
+		NSMutableArray<NSString *> *inMemorium = [NSMutableArray arrayWithCapacity:1];
+        [self->_infoClients enumerateKeysAndObjectsUsingBlock:^(NSString * key, SyphonMessageSender * client, BOOL *stop) {
+			if (!client.isValid)
 			{
 				[inMemorium addObject:key];
 			}
 		}];
-		[inMemorium enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+		[inMemorium enumerateObjectsUsingBlock:^(NSString *obj, NSUInteger idx, BOOL *stop) {
 			[self removeInfoClient:obj];
 		}];
 		[inMemorium removeAllObjects];
-        [self->_frameClients enumerateKeysAndObjectsUsingBlock:^(id key, id client, BOOL *stop) {
-			if (![client isValid])
+        [self->_frameClients enumerateKeysAndObjectsUsingBlock:^(NSString * key, SyphonMessageSender * client, BOOL *stop) {
+			if (!client.isValid)
 			{
 				[inMemorium addObject:key];
 			}
 		}];
-		[inMemorium enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+		[inMemorium enumerateObjectsUsingBlock:^(NSString *obj, NSUInteger idx, BOOL *stop) {
 			[self removeFrameClient:obj];
 		}];
 	});
