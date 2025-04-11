@@ -50,4 +50,5 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - (void)publishNewFrame;
 - (void)setSurfaceID:(IOSurfaceID)newID;
 - (void)setName:(NSString *)name;
+@property(readwrite) dispatch_queue_t queue;
 @end

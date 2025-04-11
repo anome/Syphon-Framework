@@ -48,7 +48,6 @@
     NSString *_uuid;
     IOSurfaceID _surfaceID;
     SyphonSafeBool _hasClients;
-    dispatch_queue_t _queue;
 }
 
 + (BOOL)automaticallyNotifiesObserversForKey:(NSString *)theKey
@@ -91,7 +90,7 @@
 		_uuid = [uuid copy];
 		_infoClients = [[NSMutableDictionary alloc] initWithCapacity:1];
 		_frameClients = [[NSMutableDictionary alloc] initWithCapacity:1];
-		_queue = dispatch_queue_create([uuid cStringUsingEncoding:NSUTF8StringEncoding], NULL);
+        self.queue = dispatch_queue_create([uuid cStringUsingEncoding:NSUTF8StringEncoding], NULL);
 	}
 	return self;
 }
@@ -108,7 +107,7 @@
 - (void)setName:(NSString *)serverName
 {	
 	// Tell connected clients
-	dispatch_async(_queue, ^{
+	dispatch_async(self.queue, ^{
         [self->_infoClients enumerateKeysAndObjectsUsingBlock:^(NSString *key, SyphonMessageSender *client, BOOL *stop) {
 			[client send:serverName ofType:SyphonMessageTypeUpdateServerName];
 		}];
@@ -123,7 +122,7 @@
 - (void)addInfoClient:(NSString *)clientUUID
 {
 	SYPHONLOG(@"Add info client: %@", clientUUID);
-	dispatch_async(_queue, ^{
+	dispatch_async(self.queue, ^{
         if (self->_alive && clientUUID)
 		{
 			SyphonMessageSender *sender = [[SyphonMessageSender alloc] initForName:clientUUID protocol:SyphonMessagingProtocolCFMessage invalidationHandler:^(void){
@@ -159,7 +158,7 @@
 - (void)removeInfoClient:(NSString *)clientUUID
 {
 	SYPHONLOG(@"Remove info client: %@", clientUUID);
-	dispatch_async(_queue, ^{
+	dispatch_async(self.queue, ^{
         if (self->_alive && clientUUID)
 		{
             if ([self->_infoClients objectForKey:clientUUID])
@@ -184,7 +183,7 @@
 
 - (void)addFrameClient:(NSString *)clientUUID
 {
-	dispatch_async(_queue, ^{
+	dispatch_async(self.queue, ^{
         if (self->_alive && clientUUID)
 		{
 			SYPHONLOG(@"Adding frame client: %@", clientUUID);
@@ -214,7 +213,7 @@
 - (void)removeFrameClient:(NSString *)clientUUID
 {
 	SYPHONLOG(@"Removing frame client: %@", clientUUID);
-	dispatch_async(_queue, ^{
+	dispatch_async(self.queue, ^{
         if (self->_alive && clientUUID)
 		{
             [self->_frameClients removeObjectForKey:clientUUID];
@@ -229,7 +228,7 @@
 {
 	SYPHONLOG(@"Start Connection");
 	__block BOOL result;
-	dispatch_sync(_queue, ^{
+	dispatch_sync(self.queue, ^{
 		if (!_alive)
 		{
             NSSet *classes = [NSSet setWithObjects:[NSString class], nil];
@@ -276,7 +275,7 @@
 - (void)stop
 {
 	SYPHONLOG(@"stopping");
-	dispatch_sync(_queue, ^{
+	dispatch_sync(self.queue, ^{
 		if (_alive)
 		{
 			// make sure we destroy our connection
@@ -314,7 +313,7 @@
 
 - (void)publishNewFrame
 {
-	dispatch_sync(_queue, ^{
+	dispatch_sync(self.queue, ^{
 		[_frameClients enumerateKeysAndObjectsUsingBlock:^(NSString *key, SyphonMessageSender *client, BOOL *stop) {
 			[client send:nil ofType:SyphonMessageTypeNewFrame];
 		}];
@@ -323,7 +322,7 @@
 
 - (void)setSurfaceID:(IOSurfaceID)newID
 {
-	dispatch_sync(_queue, ^{
+	dispatch_sync(self.queue, ^{
         if( _surfaceID != newID )
         {
             _surfaceID = newID;
@@ -338,7 +337,7 @@
 
 - (void)handleDeadConnection
 {
-	dispatch_async(_queue, ^{
+	dispatch_async(self.queue, ^{
 		NSMutableArray<NSString *> *inMemorium = [NSMutableArray arrayWithCapacity:1];
         [self->_infoClients enumerateKeysAndObjectsUsingBlock:^(NSString * key, SyphonMessageSender * client, BOOL *stop) {
 			if (!client.isValid)
