@@ -59,6 +59,7 @@ extern NSString * const SyphonServerOptionIsPrivate;
 */
 - (id)initWithName:(nullable NSString*)name device:(id<MTLDevice>)device options:(nullable NSDictionary<NSString *, id> *)options;
 
+- (id)initWithName:(NSString *)name device:(id<MTLDevice>)theDevice colorPixelFormat:(MTLPixelFormat)pixelFormat options:(NSDictionary<NSString *, id> *)options;
 /*!
  The MTLDevice the server uses for drawing.
 */

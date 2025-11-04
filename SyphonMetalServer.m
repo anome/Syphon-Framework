@@ -36,6 +36,7 @@
 {
     id<MTLTexture> _surfaceTexture;
     id<MTLDevice> _device;
+    MTLPixelFormat _pixelFormat;
     SyphonServerRendererMetal *_renderer;
 }
 
@@ -46,20 +47,26 @@
 
 #pragma mark - Lifecycle
 
-- (id)initWithName:(NSString *)name device:(id<MTLDevice>)theDevice options:(NSDictionary<NSString *, id> *)options
+- (id)initWithName:(NSString *)name device:(id<MTLDevice>)theDevice colorPixelFormat:(MTLPixelFormat)pixelFormat options:(NSDictionary<NSString *, id> *)options
 {
     self = [super initWithName:name options:options];
     if( self )
     {
         _device = theDevice;
         _surfaceTexture = nil;
-        _renderer = [[SyphonServerRendererMetal alloc] initWithDevice:theDevice colorPixelFormat:MTLPixelFormatBGRA8Unorm];
+        _pixelFormat = pixelFormat;
+        _renderer = [[SyphonServerRendererMetal alloc] initWithDevice:theDevice colorPixelFormat:pixelFormat];
         if (!_renderer)
         {
             return nil;
         }
     }
     return self;
+}
+
+- (id)initWithName:(NSString *)name device:(id<MTLDevice>)theDevice options:(NSDictionary<NSString *, id> *)options
+{
+    return [self initWithName:name device:theDevice colorPixelFormat:MTLPixelFormatBGRA8Unorm options:options];
 }
 
 - (id)init
@@ -92,12 +99,21 @@
         }
         if(_surfaceTexture == nil)
         {
-            MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+            MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:_pixelFormat
                                                                                                   width:size.width
                                                                                                  height:size.height
                                                                                               mipmapped:NO];
             descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-            IOSurfaceRef surface = [self newSurfaceForWidth:size.width height:size.height options:nil];
+            IOSurfaceRef surface;
+            if( _pixelFormat != MTLPixelFormatRGBA16Float && _pixelFormat != MTLPixelFormatRGBA16Unorm )
+            {
+                surface = [self newSurfaceForWidth:size.width height:size.height options:nil];
+            }
+            else
+            {
+                surface = [self newSurfaceForWidth:size.width height:size.height bytesPerElement:@(8U) options:@{@"ComponentTypeFloat":@(_pixelFormat == MTLPixelFormatRGBA16Float)}];
+            }
+            
             if (surface)
             {
                 _surfaceTexture = [_device newTextureWithDescriptor:descriptor iosurface:surface plane:0];

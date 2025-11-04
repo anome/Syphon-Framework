@@ -241,6 +241,11 @@ static void finalizer(void)
 
 - (IOSurfaceRef)newSurfaceForWidth:(size_t)width height:(size_t)height options:(NSDictionary<NSString *, id> *)options
 {
+    return [self newSurfaceForWidth:width height:height bytesPerElement:@(4U) options:options];
+}
+
+- (IOSurfaceRef)newSurfaceForWidth:(size_t)width height:(size_t)height bytesPerElement:(NSNumber*)bytesPerElement options:(NSDictionary<NSString *, id> *)options
+{
     // TODO: are we locking here?
     if (!_surface || IOSurfaceGetWidth(_surface) != width || IOSurfaceGetHeight(_surface) != height)
     {
@@ -249,13 +254,14 @@ static void finalizer(void)
             CFRelease(_surface);
         }
         // init our texture and IOSurface
+        OSType pixelFormat = [[options valueForKey:@"ComponentTypeFloat"] boolValue]?kCVPixelFormatType_64RGBAHalf:0;
         NSDictionary<NSString *, id> *surfaceAttributes = @{(NSString*)kIOSurfaceIsGlobal: @(YES),
                                                             (NSString*)kIOSurfaceWidth: @(width),
                                                             (NSString*)kIOSurfaceHeight: @(height),
-                                                            (NSString*)kIOSurfaceBytesPerElement: @(4U)};
+                                                            (NSString*)kIOSurfaceBytesPerElement:bytesPerElement,
+                                                            (NSString*)kIOSurfacePixelFormat:@(pixelFormat) };
 
         _surface =  IOSurfaceCreate((CFDictionaryRef) surfaceAttributes);
-
         _pushPending = YES;
     }
     if (_surface)

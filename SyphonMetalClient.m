@@ -91,11 +91,11 @@
     if (atomic_load(&_frameValid) == false)
     {
         _frame = nil;
-
         IOSurfaceRef surface = [self newSurface];
         if (surface != nil)
         {
-            MTLTextureDescriptor* descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:IOSurfaceGetWidth(surface) height:IOSurfaceGetHeight(surface) mipmapped:NO];
+            MTLPixelFormat pixelFormat = [self mtlPixelFormatForIOSurface:surface];
+            MTLTextureDescriptor* descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:pixelFormat width:IOSurfaceGetWidth(surface) height:IOSurfaceGetHeight(surface) mipmapped:NO];
             _frame = [_device newTextureWithDescriptor:descriptor iosurface:surface plane:0];
 
             CFRelease(surface);
@@ -109,6 +109,24 @@
     os_unfair_lock_unlock(&_threadLock);
 
     return image;
+}
+
+- (MTLPixelFormat)mtlPixelFormatForIOSurface:(IOSurfaceRef)surface
+{
+    size_t bytesPerElement = IOSurfaceGetBytesPerElement(surface);
+    if( bytesPerElement == 8U )
+    {
+        OSType pixelFormat = IOSurfaceGetPixelFormat(surface);
+        if( pixelFormat == kCVPixelFormatType_64RGBAHalf )
+        {
+            return MTLPixelFormatRGBA16Float;
+        }
+        else
+        {
+            return MTLPixelFormatRGBA16Unorm;
+        }
+    }
+    return MTLPixelFormatBGRA8Unorm;
 }
 
 @end

@@ -43,6 +43,7 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (nullable IOSurfaceRef)newSurfaceForWidth:(size_t)width height:(size_t)height options:(nullable NSDictionary<NSString *, id> *)options;
 
+- (nullable IOSurfaceRef)newSurfaceForWidth:(size_t)width height:(size_t)height bytesPerElement:(NSNumber*)bytesPerElements options:(nullable NSDictionary<NSString *, id> *)options;
 /*!
  Subclasses may call this to release any current IOSurface
  */
