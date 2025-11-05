@@ -111,7 +111,7 @@
             }
             else
             {
-                surface = [self newSurfaceForWidth:size.width height:size.height bytesPerElement:@(8U) options:@{@"ComponentTypeFloat":@(_pixelFormat == MTLPixelFormatRGBA16Float)}];
+                surface = [self newSurfaceForWidth:size.width height:size.height bytesPerElement:@(8U) options:@{FLOAT_PIXEL_FORMAT:@(_pixelFormat == MTLPixelFormatRGBA16Float)}];
             }
             
             if (surface)

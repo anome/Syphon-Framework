@@ -254,7 +254,7 @@ static void finalizer(void)
             CFRelease(_surface);
         }
         // init our texture and IOSurface
-        OSType pixelFormat = [[options valueForKey:@"ComponentTypeFloat"] boolValue]?kCVPixelFormatType_64RGBAHalf:0;
+        OSType pixelFormat = [[options valueForKey:FLOAT_PIXEL_FORMAT] boolValue]?kCVPixelFormatType_64RGBAHalf:0;
         NSDictionary<NSString *, id> *surfaceAttributes = @{(NSString*)kIOSurfaceIsGlobal: @(YES),
                                                             (NSString*)kIOSurfaceWidth: @(width),
                                                             (NSString*)kIOSurfaceHeight: @(height),

@@ -29,6 +29,8 @@
 
 #import <Foundation/Foundation.h>
 
+#define FLOAT_PIXEL_FORMAT @"FLOAT_PIXEL_FORMAT"
+
 NS_ASSUME_NONNULL_BEGIN
 
 /*!
